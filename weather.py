@@ -17,71 +17,65 @@ import time
 import arrow
 from flask import Flask, abort, jsonify
 from flask_caching import Cache
-from flask_cors import CORS, cross_origin
 import requests
-from webargs.flaskparser import FlaskParser, use_kwargs
+from webargs.flaskparser import parser, use_kwargs
 from webargs import *
 
 # user defined modules
-# sys.path.insert(0, '/home/dusr/common')
-import common.logger
-
+from common import logger
 
 app = Flask(__name__)
 cache = Cache(config={'CACHE_TYPE': 'simple'})
 cache.init_app(app)
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
-CORS(app)
-parser = FlaskParser()
 
+# TODO: Make this its own file
 # Dictionary of all errors for easier reuse.
 errors = {
     # common
-    1: 'Invalid version.',
-    2: 'User not found.',
-    3: 'Error validating user_id.',
-    4: 'Invalid Request: user_id must be a valid UUID.',
-    5: 'Invalid Request: user_id is required.',
+    '02x001': 'Invalid version.',
+    '02x002': 'User not found.',
+    '02x003': 'Error validating user_id.',
+    '02x004': 'Invalid Request: user_id must be a valid UUID.',
+    '02x005': 'Invalid Request: user_id is required.',
     # weather specific
-    6: 'Invalid Request: location must be in the format <latitude>,<longitude>.',
-    7: 'Invalid Request: location is required and cannot be empty.',
-    8: 'Invalid Request: location cannot contain more than one latitude, longitude pair.',
-    9: 'Invalid Request: non-numeric {} provided',
-    10: 'Invalid Request: Latitude must be between -90 and 90.',
-    11: 'Invalid Request: Longitude must be between -360 and 360.',
-    12: 'Error validating location.',
-    13: 'Error retrieving weather data.'
+    '02x006': 'Invalid Request: location must be in the format <latitude>,<longitude>.',
+    '02x007': 'Invalid Request: location is required and cannot be empty.',
+    '02x008': 'Invalid Request: location cannot contain more than one latitude, longitude pair.',
+    '02x009': 'Invalid Request: non-numeric {} provided',
+    '02x010': 'Invalid Request: Latitude must be between -90 and 90.',
+    '02x011': 'Invalid Request: Longitude must be between -360 and 360.',
+    '02x012': 'Error validating location.',
+    '02x013': 'Error retrieving weather data.',
+    '02x014': 'Invalid Request: unitcode must be one of the following: si-std, us-std.',
+    '02x015': 'Invalid Request: metar must be a valid station id.',
+    '02x016': 'Invalid Request: map_click.' # TODO expand upon this error.
 }
 
 # Hardcode account_id's
 # TODO: Implement database to store this information
 users = None
 f = open('users.json', 'r')
-users = f.read()
-users = json.loads(users)
+users = json.loads(f.read())
 
-print(users)
-print(type(users))
 
 @app.errorhandler(422)
 def custom_handler(error):
-    errs = []
-    if 'user_id' in error.data['messages']:
-        if 'Not a valid UUID.' in error.data['messages']['user_id']:
-            errs.append('Invalid Request: user_id must be a valid UUID.')
-        if 'Missing data for required field.' in error.data['messages']['user_id']:
-            errs.append('Invalid Request: user_id is required.')
-    if 'location' in error.data['messages']:
-        if 'Missing data for required field.' in error.data['messages']['location']:
-            errs.append('Invalid Request: location is required.')
-    if 'unitcode' in error.data['messages']:
-        if 'Missing data for required field.' in error.data['messages']['unitcode']:
-            errs.append('Invalid Request: unitcode is required.')
-    return str(errs), 400
+
+    content_type = 'application/json; charset=utf8'
+    index_log.info(error)
+    custom_errors = {}
+
+    for arg in error.data['messages']:
+        if isinstance(error.data['messages'][arg], list):
+            for item in error.data['messages'][arg]:
+                custom_errors[arg] = item
+
+    return json.dumps(custom_errors), 400
 
 
 # Setup logging
-# weather_log = logger.get_logger('logger', './weather.log')
+weather_log = logger.get_logger('logger', './weather.log')
 
 # uses lat,lon
 points_url = 'https://api.weather.gov/points/{},{}'
@@ -90,23 +84,81 @@ raw_forecast_url = 'https://api.weather.gov/gridpoints/TOP/{},{}'
 weekly_forecast_url = 'https://forecast-v3.weather.gov/point/{},{}?view=plain&mode=min'
 map_click_url = 'https://forecast.weather.gov/MapClick.php?lat={}&lon={}&unit={}&lg=english&FcstType=json'
 metar_url = 'https://w1.weather.gov/data/METAR/{}.1.txt'
-astronomical_url = 'https://api.usno.navy.mil/rstt/oneday?date={}&coords={},{}&tz={}'
+# This may me deprecated...
+# astronomical_url = 'https://api.usno.navy.mil/rstt/oneday?date={}&coords={},{}&tz={}'
 
 
 weather_args = {
-    "location": fields.String(required=True, location="query"),
-    "map_click": fields.String(allow_missing=True, location="query"),
-    "metar": fields.String(allow_missing=True, location="query"),
-    "pp": fields.String(allow_missing=True, location="query"),
-    "unitcode": fields.String(missing='us-std', location="query", \
-                              validate=lambda v: str(v) in ['si-std', 'us-std']),
-    "user_id": fields.UUID(required=True, location="query")
+    "location": fields.String(
+        required=True,
+        location="query",
+        error_messages={
+            "null": error['02x006'],
+            "required": error['02x007'],
+            "invalid_uuid": error['02x006'],
+            "type": error['02x006']
+            # Unused error messages
+            # "validator_failed": error['02x006'],
+        }
+    ),
+    "map_click": fields.String(
+        allow_missing=True,
+        location="query",
+        error_messages={
+            "null": error['02x016'],
+            "required": error['02x016'],
+            "invalid_uuid": error['02x016'],
+            "type": error['02x016']
+            # Unused error messages
+            # "validator_failed": error['02x016'],
+        }
+    ),
+    "metar": fields.String(
+        allow_missing=True,
+        location="query",
+        error_messages={
+            "null": error['02x015'],
+            "required": error['02x015'],
+            "invalid_uuid": error['02x015'],
+            "type": error['02x015']
+            # Unused error messages
+            # "validator_failed": error['02x015'],
+        }
+    ),
+    "unitcode": fields.String(
+        missing='us-std',
+        location="query",
+        validate=lambda v: str(v) in ['si-std', 'us-std'],
+        error_messages={
+            "null": error['02x014'],
+            "required": error['02x014'],
+            "invalid_uuid": error['02x014'],
+            "type": error['02x014']
+            "validator_failed": error['02x014'],
+        }
+    ),
+    "user_id": fields.UUID(
+        required=True,
+        location="query",
+        error_messages={
+            "null": error['02x004'],
+            "required": error['02x005'],
+            "invalid_uuid": error['02x004'],
+            "type": error['02x004']
+            # Unused error messages
+            # "validator_failed": error['02x004'],
+        }
+    ),
+    ## -- internal use only
+    "pp": fields.String(
+        allow_missing=True,
+        location="query"
+    )
 }
 
 
 @cache.cached(timeout=1800) # 30 minutes * 60 seconds/min = 1800
 @app.route('/<version>/weather', methods=['GET'], strict_slashes=False)
-@cross_origin(origins='*')
 @use_kwargs(weather_args)
 def get_weather(version, **kwargs):
     curr_time = arrow.now('US/Mountain')
@@ -118,44 +170,44 @@ def get_weather(version, **kwargs):
 
     # check for valid version
     if version != 'v1.0':
-        abort(400, errors[1])
+        abort(400, errors['02x001'])
 
     # check for valid user_id
     try:
-        assert str(kwargs['user_id']) in users, errors[2]
+        assert str(kwargs['user_id']) in users, errors['02x002']
     except AssertionError as e:
         weather_log.error(e)
         abort(400, e)
     except Exception as e:
         weather_log.error(e)
-        abort(400, errors[3])
+        abort(400, errors['02x003'])
 
     # check for valid location
     try:
-        assert type(kwargs['location']) == str, errors[6]
+        assert type(kwargs['location']) == str, errors['02x006']
         loc = kwargs['location'].replace(' ', '').split(',')
 
-        assert len(loc) == 2, errors[8]
+        assert len(loc) == 2, errors['02x008']
 
         lat = loc[0]
         lon = loc[1]
 
-        assert float(lat), errors[9].format('longitude')
-        assert float(lon), errors[9].format('latitude')
-        assert -90.0 <= float(lat) <= 90.0, errors[10]
-        assert -360 <= float(lon) <= 360.0, errors[11]
+        assert float(lat), errors['02x009'].format('longitude')
+        assert float(lon), errors['02x009'].format('latitude')
+        assert -90.0 <= float(lat) <= 90.0, errors['02x010']
+        assert -360 <= float(lon) <= 360.0, errors['02x011']
     except AssertionError as e:
         weather_log.error(e)
         abort(400, e)
     except Exception as e:
         weather_log.error(e)
-        abort(400, errors[12])
+        abort(400, errors['02x012'])
 
     # TODO separate these so multiple can be called in a single request (all separate if statements)
     urls = {}
     # Choose url
     if 'metar' in kwargs:
-        # TODO fingure out how to perform a lookup to obtain this
+        # TODO figure out how to perform a lookup to obtain this
         # hard coded for now
         urls['metar'] = metar_url.format('KRAP')
     elif 'raw_forecast' in kwargs:
@@ -190,41 +242,42 @@ def get_weather(version, **kwargs):
                         raw_data['icon_type'] = wx_condition
                         break
 
-                astro_response = requests.get(astronomical_url.format(curr_time.format('MM/DD/YYYY'), \
-                                              lat, lon, offset_hours))
-                assert astro_response.status_code == 200
-                raw_astro = astro_response.json()
-                raw_data['moon'] = {
-                    'phase': raw_astro['closestphase']['phase'],
-                    'rise': 'n/a',
-                    'set': 'n/a'
-                }
-                raw_data['sun'] = {
-                    'rise': 'n/a',
-                    'set': 'n/a'
-                }
-                raw_data['moon_phase'] = raw_astro['closestphase']['phase']
-                for item in raw_astro['moondata']:
-                    if item['phen'] == 'R':
-                        if is_valid_time(item['time']):
-                            raw_data['moon']['rise'] = item['time']
-                    elif item['phen'] == 'S':
-                        if is_valid_time(item['time']):
-                            raw_data['moon']['set'] = item['time']
-                for item in raw_astro['sundata']:
-                    if item['phen'] == 'R':
-                        if is_valid_time(item['time']):
-                            raw_data['sun']['rise'] = item['time']
-                    elif item['phen'] == 'S':
-                        if is_valid_time(item['time']):
-                            raw_data['sun']['set'] = item['time']
+                ##  -- This has been commented out due to ongoing upgrades/deprecation of
+                ##     the api.usno.navy.mil endpoint.
+                # astro_response = requests.get(astronomical_url.format(curr_time.format('MM/DD/YYYY'), \
+                #                               lat, lon, offset_hours))
+                # assert astro_response.status_code == 200
+                # raw_astro = astro_response.json()
+                # raw_data['moon'] = {
+                #     'phase': raw_astro['closestphase']['phase'],
+                #     'rise': 'n/a',
+                #     'set': 'n/a'
+                # }
+                # raw_data['sun'] = {
+                #     'rise': 'n/a',
+                #     'set': 'n/a'
+                # }
+                # raw_data['moon_phase'] = raw_astro['closestphase']['phase']
+                # for item in raw_astro['moondata']:
+                #     if item['phen'] == 'R':
+                #         if is_valid_time(item['time']):
+                #             raw_data['moon']['rise'] = item['time']
+                #     elif item['phen'] == 'S':
+                #         if is_valid_time(item['time']):
+                #             raw_data['moon']['set'] = item['time']
+                # for item in raw_astro['sundata']:
+                #     if item['phen'] == 'R':
+                #         if is_valid_time(item['time']):
+                #             raw_data['sun']['rise'] = item['time']
+                #     elif item['phen'] == 'S':
+                #         if is_valid_time(item['time']):
+                #             raw_data['sun']['set'] = item['time']
             else:
                 raw_data[key] = response.json()
     except AssertionError as e:
         weather_log.error(e)
-        abort(400, errors[13])
+        abort(400, errors['02x013'])
     except Exception as e:
-        print(e)
         weather_log.error(e)
         abort(400, e)
 
@@ -237,19 +290,75 @@ def get_weather(version, **kwargs):
 
 
 current_conditions_args = {
-    "location": fields.String(required=True, location="query"),
-    "map_click": fields.String(allow_missing=True, location="query"),
-    "metar": fields.String(allow_missing=True, location="query"),
-    "pp": fields.String(allow_missing=True, location="query"),
-    "unitcode": fields.String(missing='us-std', location="query", \
-                              validate=lambda v: str(v) in ['si-std', 'us-std']),
-    "user_id": fields.UUID(required=True, location="query")
+    "location": fields.String(
+        required=True,
+        location="query",
+        error_messages={
+            "null": error['02x006'],
+            "required": error['02x007'],
+            "invalid_uuid": error['02x006'],
+            "type": error['02x006']
+            # Unused error messages
+            # "validator_failed": error['02x006'],
+        }
+    ),
+    "map_click": fields.String(
+        allow_missing=True,
+        location="query",
+        error_messages={
+            "null": error['02x016'],
+            "required": error['02x016'],
+            "invalid_uuid": error['02x016'],
+            "type": error['02x016']
+            # Unused error messages
+            # "validator_failed": error['02x016'],
+        }
+    ),
+    "metar": fields.String(
+        allow_missing=True,
+        location="query",
+        error_messages={
+            "null": error['02x015'],
+            "required": error['02x015'],
+            "invalid_uuid": error['02x015'],
+            "type": error['02x015']
+            # Unused error messages
+            # "validator_failed": error['02x015'],
+        }
+    ),
+    "pp": fields.String(
+        allow_missing=True,
+        location="query"
+    ),
+    "unitcode": fields.String(
+        missing='us-std',
+        location="query",
+        validate=lambda v: str(v) in ['si-std', 'us-std'],
+        error_messages={
+            "null": error['02x014'],
+            "required": error['02x014'],
+            "invalid_uuid": error['02x014'],
+            "type": error['02x014']
+            "validator_failed": error['02x014'],
+        }
+    ),
+    "user_id": fields.UUID(
+        required=True,
+        location="query",
+        error_messages={
+            "null": error['02x004'],
+            "required": error['02x005'],
+            "invalid_uuid": error['02x004'],
+            "type": error['02x004']
+            # Unused error messages
+            # "validator_failed": error['02x004'],
+        }
+    )
 }
 
 
 @cache.cached(timeout=1800) # 30 minutes * 60 seconds/min = 1800
 @app.route('/<version>/wx/current/', methods=['GET'], strict_slashes=False)
-@cross_origin(origins='*')
 @use_kwargs(current_conditions_args)
 def get_current_conditions(version, **kwargs):
     curr_time = arrow.now('US/Mountain')
@@ -261,38 +370,38 @@ def get_current_conditions(version, **kwargs):
 
     # check for valid version
     if version != 'v1.0':
-        abort(400, errors[1])
+        abort(400, errors['02x001'])
 
     # check for valid user_id
     try:
-        assert str(kwargs['user_id']) in users, errors[2]
+        assert str(kwargs['user_id']) in users, errors['02x002']
     except AssertionError as e:
         weather_log.error(e)
         abort(400, e)
     except Exception as e:
         weather_log.error(e)
-        abort(400, errors[3])
+        abort(400, errors['02x003'])
 
     # check for valid location
     try:
-        assert type(kwargs['location']) == str, errors[6]
+        assert type(kwargs['location']) == str, errors['02x006']
         loc = kwargs['location'].replace(' ', '').split(',')
 
-        assert len(loc) == 2, errors[8]
+        assert len(loc) == 2, errors['02x008']
 
         lat = loc[0]
         lon = loc[1]
 
-        assert float(lat), errors[9].format('longitude')
-        assert float(lon), errors[9].format('latitude')
-        assert -90.0 <= float(lat) <= 90.0, errors[10]
-        assert -360 <= float(lon) <= 360.0, errors[11]
+        assert float(lat), errors['02x009'].format('longitude')
+        assert float(lon), errors['02x009'].format('latitude')
+        assert -90.0 <= float(lat) <= 90.0, errors['02x010']
+        assert -360 <= float(lon) <= 360.0, errors['02x011']
     except AssertionError as e:
         weather_log.error(e)
         abort(400, e)
     except Exception as e:
         weather_log.error(e)
-        abort(400, errors[12])
+        abort(400, errors['02x012'])
 
     # retrieve data from url
     try:
@@ -344,7 +453,7 @@ def get_current_conditions(version, **kwargs):
                     raw_data['sun']['set'] = item['time']
     except AssertionError as e:
         weather_log.error(e)
-        abort(400, errors[13])
+        abort(400, errors['02x013'])
     except Exception as e:
         weather_log.error(e)
         abort(400, e)
