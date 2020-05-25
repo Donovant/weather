@@ -23,34 +23,13 @@ from webargs import *
 
 # user defined modules
 from common import logger
+from common.error_handling import get_error
 
 app = Flask(__name__)
 cache = Cache(config={'CACHE_TYPE': 'simple'})
 cache.init_app(app)
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 
-# TODO: Make this its own file
-# Dictionary of all errors for easier reuse.
-errors = {
-    # common
-    '02x001': 'Invalid version.',
-    '02x002': 'User not found.',
-    '02x003': 'Error validating user_id.',
-    '02x004': 'Invalid Request: user_id must be a valid UUID.',
-    '02x005': 'Invalid Request: user_id is required.',
-    # weather specific
-    '02x006': 'Invalid Request: location must be in the format <latitude>,<longitude>.',
-    '02x007': 'Invalid Request: location is required and cannot be empty.',
-    '02x008': 'Invalid Request: location cannot contain more than one latitude, longitude pair.',
-    '02x009': 'Invalid Request: non-numeric {} provided',
-    '02x010': 'Invalid Request: Latitude must be between -90 and 90.',
-    '02x011': 'Invalid Request: Longitude must be between -360 and 360.',
-    '02x012': 'Error validating location.',
-    '02x013': 'Error retrieving weather data.',
-    '02x014': 'Invalid Request: unitcode must be one of the following: si-std, us-std.',
-    '02x015': 'Invalid Request: metar must be a valid station id.',
-    '02x016': 'Invalid Request: map_click.' # TODO expand upon this error.
-}
 
 # Hardcode account_id's
 # TODO: Implement database to store this information
@@ -70,6 +49,8 @@ def custom_handler(error):
         if isinstance(error.data['messages'][arg], list):
             for item in error.data['messages'][arg]:
                 custom_errors[arg] = item
+        if isinstance(error.data['messages'][arg], dict):
+            custom_errors.update(error.data['messages'][arg])
 
     return json.dumps(custom_errors), 400
 
@@ -93,12 +74,12 @@ weather_args = {
         required=True,
         location="query",
         error_messages={
-            "null": error['02x006'],
-            "required": error['02x007'],
-            "invalid_uuid": error['02x006'],
-            "type": error['02x006']
+            "null": get_error('02x006'),
+            "required": get_error('02x007'),
+            "invalid_uuid": get_error('02x006'),
+            "type": get_error('02x006')
             # Unused error messages
-            # "validator_failed": error['02x006'],
+            # "validator_failed": get_error('02x006'),
         }
     ),
     "map_click": fields.String(
@@ -141,12 +122,12 @@ weather_args = {
         required=True,
         location="query",
         error_messages={
-            "null": error['02x004'],
-            "required": error['02x005'],
-            "invalid_uuid": error['02x004'],
-            "type": error['02x004']
+            "null": get_error('02x004'),
+            "required": get_error('02x005'),
+            "invalid_uuid": get_error('02x004'),
+            "type": get_error('02x004')
             # Unused error messages
-            # "validator_failed": error['02x004'],
+            # "validator_failed": get_error('02x004'),
         }
     ),
     ## -- internal use only
@@ -170,38 +151,38 @@ def get_weather(version, **kwargs):
 
     # check for valid version
     if version != 'v1.0':
-        abort(400, errors['02x001'])
+        abort(400, get_error('02x001'))
 
     # check for valid user_id
     try:
-        assert str(kwargs['user_id']) in users, errors['02x002']
+        assert str(kwargs['user_id']) in users, get_error('02x002')
     except AssertionError as e:
         weather_log.error(e)
         abort(400, e)
     except Exception as e:
         weather_log.error(e)
-        abort(400, errors['02x003'])
+        abort(400, get_error('02x003'))
 
     # check for valid location
     try:
-        assert type(kwargs['location']) == str, errors['02x006']
+        assert type(kwargs['location']) == str, get_error('02x006')
         loc = kwargs['location'].replace(' ', '').split(',')
 
-        assert len(loc) == 2, errors['02x008']
+        assert len(loc) == 2, get_error('02x008')
 
         lat = loc[0]
         lon = loc[1]
 
-        assert float(lat), errors['02x009'].format('longitude')
-        assert float(lon), errors['02x009'].format('latitude')
-        assert -90.0 <= float(lat) <= 90.0, errors['02x010']
-        assert -360 <= float(lon) <= 360.0, errors['02x011']
+        assert float(lat), get_error('02x009', arg='longitude')
+        assert float(lon), get_error('02x009', arg='latitude')
+        assert -90.0 <= float(lat) <= 90.0, get_error('02x010')
+        assert -360 <= float(lon) <= 360.0, getget_error('02x011')
     except AssertionError as e:
         weather_log.error(e)
         abort(400, e)
     except Exception as e:
         weather_log.error(e)
-        abort(400, errors['02x012'])
+        abort(400, get_error('02x012'))
 
     # TODO separate these so multiple can be called in a single request (all separate if statements)
     urls = {}
@@ -276,7 +257,7 @@ def get_weather(version, **kwargs):
                 raw_data[key] = response.json()
     except AssertionError as e:
         weather_log.error(e)
-        abort(400, errors['02x013'])
+        abort(400, get_error('02x013'))
     except Exception as e:
         weather_log.error(e)
         abort(400, e)
@@ -294,36 +275,36 @@ current_conditions_args = {
         required=True,
         location="query",
         error_messages={
-            "null": error['02x006'],
-            "required": error['02x007'],
-            "invalid_uuid": error['02x006'],
-            "type": error['02x006']
+            "null": get_error('02x006'),
+            "required": get_error('02x007'),
+            "invalid_uuid": get_error('02x006'),
+            "type": get_error('02x006')
             # Unused error messages
-            # "validator_failed": error['02x006'],
+            # "validator_failed": get_error('02x006'),
         }
     ),
     "map_click": fields.String(
         allow_missing=True,
         location="query",
         error_messages={
-            "null": error['02x016'],
-            "required": error['02x016'],
-            "invalid_uuid": error['02x016'],
-            "type": error['02x016']
+            "null": get_error('02x016'),
+            "required": get_error('02x016'),
+            "invalid_uuid": get_error('02x016'),
+            "type": get_error('02x016')
             # Unused error messages
-            # "validator_failed": error['02x016'],
+            # "validator_failed": get_error('02x016'),
         }
     ),
     "metar": fields.String(
         allow_missing=True,
         location="query",
         error_messages={
-            "null": error['02x015'],
-            "required": error['02x015'],
-            "invalid_uuid": error['02x015'],
-            "type": error['02x015']
+            "null": get_error('02x015'),
+            "required": get_error('02x015'),
+            "invalid_uuid": get_error('02x015'),
+            "type": get_error('02x015')
             # Unused error messages
-            # "validator_failed": error['02x015'],
+            # "validator_failed": get_error('02x015'),
         }
     ),
     "pp": fields.String(
@@ -335,23 +316,23 @@ current_conditions_args = {
         location="query",
         validate=lambda v: str(v) in ['si-std', 'us-std'],
         error_messages={
-            "null": error['02x014'],
-            "required": error['02x014'],
-            "invalid_uuid": error['02x014'],
-            "type": error['02x014']
-            "validator_failed": error['02x014'],
+            "null": get_error('02x014'),
+            "required": get_error('02x014'),
+            "invalid_uuid": get_error('02x014'),
+            "type": get_error('02x014'),
+            "validator_failed": get_error('02x014'),
         }
     ),
     "user_id": fields.UUID(
         required=True,
         location="query",
         error_messages={
-            "null": error['02x004'],
-            "required": error['02x005'],
-            "invalid_uuid": error['02x004'],
-            "type": error['02x004']
+            "null": get_error('02x004'),
+            "required": get_error('02x005'),
+            "invalid_uuid": get_error('02x004'),
+            "type": get_error('02x004')
             # Unused error messages
-            # "validator_failed": error['02x004'],
+            # "validator_failed": get_error('02x004'),
         }
     )
 }
@@ -370,7 +351,7 @@ def get_current_conditions(version, **kwargs):
 
     # check for valid version
     if version != 'v1.0':
-        abort(400, errors['02x001'])
+        abort(400, get_error('02x001'))
 
     # check for valid user_id
     try:
@@ -380,28 +361,28 @@ def get_current_conditions(version, **kwargs):
         abort(400, e)
     except Exception as e:
         weather_log.error(e)
-        abort(400, errors['02x003'])
+        abort(400, get_error('02x003'))
 
     # check for valid location
     try:
         assert type(kwargs['location']) == str, errors['02x006']
         loc = kwargs['location'].replace(' ', '').split(',')
 
-        assert len(loc) == 2, errors['02x008']
+        assert len(loc) == 2, get_error('02x008')
 
         lat = loc[0]
         lon = loc[1]
 
-        assert float(lat), errors['02x009'].format('longitude')
-        assert float(lon), errors['02x009'].format('latitude')
-        assert -90.0 <= float(lat) <= 90.0, errors['02x010']
-        assert -360 <= float(lon) <= 360.0, errors['02x011']
+        assert float(lat), get_error('02x009', arg='longitude')
+        assert float(lon), get_error('02x009', arg='latitude')
+        assert -90.0 <= float(lat) <= 90.0, get_error('02x010')
+        assert -360 <= float(lon) <= 360.0, get_error('02x011')
     except AssertionError as e:
         weather_log.error(e)
         abort(400, e)
     except Exception as e:
         weather_log.error(e)
-        abort(400, errors['02x012'])
+        abort(400, get_error('02x012'))
 
     # retrieve data from url
     try:
@@ -453,7 +434,7 @@ def get_current_conditions(version, **kwargs):
                     raw_data['sun']['set'] = item['time']
     except AssertionError as e:
         weather_log.error(e)
-        abort(400, errors['02x013'])
+        abort(400, get_error('02x013'))
     except Exception as e:
         weather_log.error(e)
         abort(400, e)
