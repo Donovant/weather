@@ -38,11 +38,15 @@ f = open('users.json', 'r')
 users = json.loads(f.read())
 
 
+# Setup logging
+weather_log = logger.get_logger('logger', './weather.log')
+
+
 @app.errorhandler(422)
 def custom_handler(error):
 
     content_type = 'application/json; charset=utf8'
-    index_log.info(error)
+    weather_log.info(error)
     custom_errors = {}
 
     for arg in error.data['messages']:
@@ -54,9 +58,6 @@ def custom_handler(error):
 
     return json.dumps(custom_errors), 400
 
-
-# Setup logging
-weather_log = logger.get_logger('logger', './weather.log')
 
 # uses lat,lon
 points_url = 'https://api.weather.gov/points/{},{}'
@@ -86,24 +87,24 @@ weather_args = {
         allow_missing=True,
         location="query",
         error_messages={
-            "null": error['02x016'],
-            "required": error['02x016'],
-            "invalid_uuid": error['02x016'],
-            "type": error['02x016']
+            "null": get_error('02x016'),
+            "required": get_error('02x016'),
+            "invalid_uuid": get_error('02x016'),
+            "type": get_error('02x016'),
             # Unused error messages
-            # "validator_failed": error['02x016'],
+            # "validator_failed": get_error('02x016'),
         }
     ),
     "metar": fields.String(
         allow_missing=True,
         location="query",
         error_messages={
-            "null": error['02x015'],
-            "required": error['02x015'],
-            "invalid_uuid": error['02x015'],
-            "type": error['02x015']
+            "null": get_error('02x015'),
+            "required": get_error('02x015'),
+            "invalid_uuid": get_error('02x015'),
+            "type": get_error('02x015')
             # Unused error messages
-            # "validator_failed": error['02x015'],
+            # "validator_failed": get_error('02x015'),
         }
     ),
     "unitcode": fields.String(
@@ -111,11 +112,11 @@ weather_args = {
         location="query",
         validate=lambda v: str(v) in ['si-std', 'us-std'],
         error_messages={
-            "null": error['02x014'],
-            "required": error['02x014'],
-            "invalid_uuid": error['02x014'],
-            "type": error['02x014']
-            "validator_failed": error['02x014'],
+            "null": get_error('02x014'),
+            "required": get_error('02x014'),
+            "invalid_uuid": get_error('02x014'),
+            "type": get_error('02x014'),
+            "validator_failed": get_error('02x014'),
         }
     ),
     "user_id": fields.UUID(
